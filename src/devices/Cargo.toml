@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["The Chromium OS Authors"]
 edition = "2018"
 
+[features]
+gpu = ["vhost-gpu-backend"]
+virgl_renderer = ["gpu", "vhost-gpu-backend/virgl_renderer"]
+
 [dependencies]
 libc = ">=0.2.39"
 timerfd = ">=1.0"
@@ -21,4 +25,4 @@ serde = { version = ">=1.0.27", features = ["derive"] }
 snapshot = { path = "../snapshot" }
 utils = { path = "../utils" }
 virtio_gen = { path = "../virtio_gen" }
-
+vhost-gpu-backend = { git = "https://github.com/baka233/vhost-gpu-backend", branch = "main", optional = true }

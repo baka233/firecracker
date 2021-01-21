@@ -676,6 +676,20 @@ pub struct VsockDeviceMetrics {
     pub rx_read_fails: SharedIncMetric,
 }
 
+#[derive(Default, Serialize)]
+pub struct GpuMetrics {
+    /// Number of failed event process
+    pub event_fails: SharedIncMetric,
+    /// Number of failed config
+    pub cfg_fails: SharedIncMetric,
+    /// Number of display config change
+    pub display_change: SharedIncMetric,
+    /// Number of virtio_gpu initial failed
+    pub initial_fails: SharedIncMetric,
+    /// Number of execute fails
+    pub execute_fails: SharedIncMetric,
+}
+
 // The sole purpose of this struct is to produce an UTC timestamp when an instance is serialized.
 #[derive(Default)]
 struct SerializeToUtcTimestampMs;
@@ -728,6 +742,8 @@ pub struct FirecrackerMetrics {
     pub signals: SignalMetrics,
     /// Metrics related to virtio-vsockets.
     pub vsock: VsockDeviceMetrics,
+    /// Metrics related to virtio-gpu.
+    pub gpu: GpuMetrics,
 }
 
 #[cfg(test)]

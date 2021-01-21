@@ -18,5 +18,5 @@ pub use mmap::{GuestMemoryMmap, GuestRegionMmap};
 // Re-export only what is needed in Firecracker.
 pub use vm_memory_upstream::{
     address, Address, ByteValued, Bytes, Error, FileOffset, GuestAddress, GuestMemory,
-    GuestMemoryError, GuestMemoryRegion, MemoryRegionAddress, MmapRegion,
+    GuestMemoryError, GuestMemoryRegion, MemoryRegionAddress, MmapRegion, Le32, Le64,
 };

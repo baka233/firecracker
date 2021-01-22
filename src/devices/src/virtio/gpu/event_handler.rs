@@ -7,7 +7,7 @@ use logger::{METRICS, IncMetric, warn};
 use std::os::unix::io::AsRawFd;
 
 impl Subscriber for Gpu {
-    fn process(&mut self, event: &EpollEvent, event_manager: &mut EventManager) {
+    fn process(&mut self, event: &EpollEvent, _event_manager: &mut EventManager) {
         let source = event.fd();
         let event_set = event.event_set();
 

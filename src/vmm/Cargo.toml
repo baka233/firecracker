@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Amazon Firecracker team <firecracker-devel@amazon.com>"]
 edition = "2018"
 
+[features]
+gpu = ["devices/gpu", "devices/virgl_renderer"]
+
 [dependencies]
 lazy_static = ">=1.4.0"
 libc = ">=0.2.39"

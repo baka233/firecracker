@@ -1,6 +1,6 @@
 use vm_memory::{GuestMemoryMmap, GuestAddress, Bytes, GuestMemory};
 use vhost_gpu_backend::{VirtioGpuCommandResult, RutabagaIovec, RutabagaFenceData};
-use vhost_gpu_backend::protocol::{virtio_gpu_ctrl_hdr, VIRTIO_GPU_FLAG_INFO_FENCE_CTX_IDX};
+use vhost_gpu_backend::protocol::VIRTIO_GPU_FLAG_INFO_FENCE_CTX_IDX;
 use std::os::raw::c_void;
 use crate::virtio::gpu::{Error, Result};
 

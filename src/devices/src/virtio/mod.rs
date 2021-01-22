@@ -12,6 +12,7 @@ use std::io::Error as IOError;
 pub mod balloon;
 pub mod block;
 pub mod device;
+#[cfg(feature = "gpu")]
 pub mod gpu;
 mod mmio;
 pub mod net;

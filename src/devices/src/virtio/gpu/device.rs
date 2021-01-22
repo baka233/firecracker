@@ -2,7 +2,7 @@ use crate::virtio::{VirtioDevice, ActivateResult, Queue, DeviceState, VIRTIO_MMI
 use vm_memory::{GuestMemoryMmap, ByteValued, Le32, Bytes, GuestAddress, Address};
 use std::sync::{Arc, Mutex};
 use utils::eventfd::EventFd;
-use std::sync::atomic::{AtomicUsize, Ordering, fence};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use vhost_gpu_backend::protocol::{VIRTIO_GPU_DEVICE_TYPE, virtio_gpu_config, VIRTIO_GPU_EVENT_DISPLAY, VIRTIO_GPU_F_VIRGL, VIRTIO_GPU_F_RESOURCE_UUID, virtio_gpu_mem_entry, VIRTIO_GPU_FLAG_FENCE};
 use vhost_gpu_backend::virtio_gpu::{GpuMode, GpuParameter};
@@ -16,10 +16,8 @@ use crate::virtio::gpu::{Error, Result};
 use std::collections::{VecDeque};
 use crate::virtio::gpu::request::Request;
 use crate::virtio::gpu::utils::{sglist_to_rutabaga_iovecs, fence_ctx_equal};
-use vhost_gpu_backend::protocol::VirtioGpuResponse::ErrUnspec;
-use crate::virtio::gpu::Error::ResponseError;
+use std::ops::{DerefMut};
 use std::mem::size_of;
-use std::ops::{Deref, DerefMut};
 
 pub(crate) struct FenceDescriptor {
     pub(crate) desc_fence: RutabagaFenceData,
@@ -32,7 +30,7 @@ pub(crate) struct ReturnDescriptor {
     pub(crate) len:        u32,
 }
 
-pub(crate) struct Gpu {
+pub struct Gpu {
     pub(crate) queues:           Vec<Queue>,
     pub(crate) interrupt_evt:    EventFd,
     pub(crate) queue_evts:       Vec<EventFd>,
@@ -60,14 +58,14 @@ pub const CTRL_QUEUE: usize = 0;
 pub const CURSOR_QUEUE: usize = 1;
 
 impl Gpu {
-    pub fn new(&self) -> Result<Self> {
+    pub fn new(gpu_mode: GpuMode) -> Result<Self> {
         let mut queue_evts = Vec::new();
         for _ in QUEUE_SIZES.iter() {
             queue_evts.push(EventFd::new(libc::EFD_NONBLOCK).map_err(Error::EventFd)?);
         }
         let queues = QUEUE_SIZES.iter().map(|&s| Queue::new(s)).collect();
 
-        let avail_features = match self.gpu_mode {
+        let avail_features = match gpu_mode {
             GpuMode::Mode2D => 0,
             GpuMode::Mode3D => {
                 1 << VIRTIO_GPU_F_VIRGL
@@ -107,8 +105,12 @@ impl Gpu {
         })?;
         Ok(())
     }
+
+    pub fn id(&self) -> String {
+        "gpu".to_string()
+    }
     
-    pub fn process_request(virtio_gpu: &mut VirtioGpu, request: &Request, mem: &GuestMemoryMmap) -> VirtioGpuResponseResult {
+    pub(crate) fn process_request(virtio_gpu: &mut VirtioGpu, request: &Request, mem: &GuestMemoryMmap) -> VirtioGpuResponseResult {
         // let mut virtio_gpu = self.virtio_gpu.as_ref().unwrap().lock().unwrap();
         match request.command {
             VirtioGpuCommand::CmdGetDisplayInfo(cmd) => {
@@ -152,13 +154,13 @@ impl Gpu {
                             let len = entry.length.to_native() as usize;
                             data.push((addr, len));
                         },
-                        Err(e) => return Err(VirtioGpuResponse::ErrInvalidParameter),
+                        Err(_) => return Err(VirtioGpuResponse::ErrInvalidParameter),
                     }
                 }
                 
                 let rutabaga_iovecs = sglist_to_rutabaga_iovecs(&data, mem);
 
-                if let Err(e) = rutabaga_iovecs {
+                if let Err(_) = rutabaga_iovecs {
                     return Err(VirtioGpuResponse::ErrInvalidParameter);
                 }
 
@@ -173,7 +175,7 @@ impl Gpu {
             VirtioGpuCommand::CmdGetCapset(cmd) => {
                 virtio_gpu.cmd_get_capset(cmd)
             }
-            VirtioGpuCommand::CmdGetEdid(cmd) => {
+            VirtioGpuCommand::CmdGetEdid(_) => {
                 Err(VirtioGpuResponse::ErrUnspec)
             }
             VirtioGpuCommand::CmdCtxCreate(cmd) => {
@@ -208,16 +210,21 @@ impl Gpu {
                     })?;
                 virtio_gpu.cmd_submit_3d(cmd, buf.as_mut_slice())
             }
-            VirtioGpuCommand::CmdUpdateCursor(cmd) => {
+            VirtioGpuCommand::CmdUpdateCursor(_) => {
                 Err(VirtioGpuResponse::ErrUnspec)
             }
-            VirtioGpuCommand::CmdMoveCursor(cmd) => {
+            VirtioGpuCommand::CmdMoveCursor(_) => {
                 Err(VirtioGpuResponse::ErrUnspec)
             }
         }
     }
 
     pub fn activate_and_build(&mut self) {
+        if let Err(e) = self.activate_evt.read() {
+            error!("Gpu: failed to read event, err: {:?}", e);
+            METRICS.gpu.event_fails.inc();
+            return;
+        };
         let gpu_parameter: GpuParameter = Default::default();
         self.virtio_gpu = VirtioGpu::new(gpu_parameter).map(Mutex::new).map(Arc::new);
         if let None = self.virtio_gpu {
@@ -233,7 +240,7 @@ impl Gpu {
         } else {
             let any_used = self.process_queue(queue_type);
             if any_used {
-                self.signal_used_queue();
+                let _ = self.signal_used_queue();
             }
         }
     }
@@ -280,11 +287,15 @@ impl Gpu {
         }
 
         if any_used {
-            self.signal_used_queue();
+            let _ = self.signal_used_queue();
         }
 
         if self.fence_descriptors.is_empty() {
             self.waiting_fence = false;
+            if let Err(e) = self.fence_evt.read() {
+                error!("Gpu: read fence evt failed, er: {:?}", e);
+                METRICS.gpu.event_fails.inc();
+            }
         }
 
         return;
@@ -326,7 +337,7 @@ impl Gpu {
 
                     if flags & VIRTIO_GPU_FLAG_FENCE != 0 {
                         let virtio_gpu_result = self.virtio_gpu.as_ref().unwrap().lock();
-                        if let Err(e) = virtio_gpu_result {
+                        if let Err(_) = virtio_gpu_result {
                             panic!("poisoned lock!");
                         }
                         let mut virtio_gpu = virtio_gpu_result.unwrap();
@@ -368,7 +379,10 @@ impl Gpu {
                     }
 
                     // it's safe to unwrap, we have already checked
-                    request.write_response(encoded_data.unwrap().as_slice(), mem);
+                    let _ = request.write_response(encoded_data.unwrap().as_slice(), mem).map_err(|e| {
+                        error!("write response failed, err: {:?}", e);
+                        e
+                    });
 
                     // if the request not fenced, just used the queue
                     if flags & VIRTIO_GPU_FLAG_FENCE != 0 {
@@ -381,7 +395,7 @@ impl Gpu {
                         any_used = true;
                     } else {
                         if self.waiting_fence {
-                            self.fence_evt.write(1).map_err(|e| {
+                            let _ = self.fence_evt.write(1).map_err(|e| {
                                 error!("make fence event failed!, err: {:?}", e);
                                 e
                             });

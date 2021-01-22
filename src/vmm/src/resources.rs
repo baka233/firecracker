@@ -22,6 +22,8 @@ use mmds::ns::MmdsNetworkStack;
 use utils::net::ipv4addr::is_link_local_valid;
 
 use serde::Deserialize;
+#[cfg(feature = "gpu")]
+use crate::vmm_config::gpu::{GpuBuilder, GpuDeviceConfig, GpuConfigError};
 
 type Result<E> = std::result::Result<(), E>;
 
@@ -48,6 +50,9 @@ pub enum Error {
     VmConfig(VmConfigError),
     /// Vsock device configuration error.
     VsockDevice(VsockConfigError),
+    /// Gpu device configuration error
+    #[cfg(feature = "gpu")]
+    GpuDevice(GpuConfigError),
 }
 
 /// Used for configuring a vmm from one single json passed to the Firecracker process.
@@ -71,6 +76,9 @@ pub struct VmmConfig {
     net_devices: Vec<NetworkInterfaceConfig>,
     #[serde(rename = "vsock")]
     vsock_device: Option<VsockDeviceConfig>,
+    #[cfg(feature = "gpu")]
+    #[serde(rename = "gpu")]
+    gpu_device: Option<GpuDeviceConfig>,
 }
 
 /// A data structure that encapsulates the device configurations
@@ -93,6 +101,9 @@ pub struct VmResources {
     pub mmds_config: Option<MmdsConfig>,
     /// Whether or not to load boot timer device.
     pub boot_timer: bool,
+    /// The gpu device.
+    #[cfg(feature = "gpu")]
+    pub gpu: GpuBuilder,
 }
 
 impl VmResources {
@@ -139,6 +150,13 @@ impl VmResources {
             resources
                 .set_vsock_device(vsock_config)
                 .map_err(Error::VsockDevice)?;
+        }
+
+        #[cfg(feature = "gpu")]
+        if let Some(gpu_config) = vmm_config.gpu_device {
+            resources
+                .set_gpu_device(gpu_config)
+                .map_err(Error::GpuDevice)?;
         }
 
         if let Some(balloon_config) = vmm_config.balloon_device {
@@ -324,6 +342,12 @@ impl VmResources {
         self.vsock.insert(config)
     }
 
+    /// Sets a gpu device to be attached when the VM starts
+    #[cfg(feature = "gpu")]
+    pub fn set_gpu_device(&mut self, config: GpuDeviceConfig) -> Result<GpuConfigError> {
+        self.gpu.insert(config)
+    }
+
     /// Setter for mmds config.
     pub fn set_mmds_config(&mut self, config: MmdsConfig) -> Result<MmdsConfigError> {
         // Check IPv4 address validity.
@@ -362,6 +386,7 @@ mod tests {
     use logger::{LevelFilter, LOGGER};
     use utils::net::mac::MacAddr;
     use utils::tempfile::TempFile;
+    use devices::virtio::gpu::Error::GpuBuildFailed;
 
     fn default_net_cfg() -> NetworkInterfaceConfig {
         NetworkInterfaceConfig {
@@ -385,6 +410,13 @@ mod tests {
         net_builder.build(default_net_cfg()).unwrap();
 
         net_builder
+    }
+
+    #[cfg(feature = "gpu")]
+    fn default_gpu_builder() -> GpuBuilder {
+        let mut gpu_builder = GpuBuilder::new();
+
+        gpu_builder
     }
 
     fn default_block_cfg() -> (BlockDeviceConfig, TempFile) {
@@ -430,6 +462,8 @@ mod tests {
             net_builder: default_net_builder(),
             mmds_config: None,
             boot_timer: false,
+            #[cfg(feature = "gpu")]
+            gpu: default_gpu_builder(),
         }
     }
 
@@ -844,6 +878,8 @@ mod tests {
             net_builder: default_net_builder(),
             mmds_config: None,
             boot_timer: false,
+            #[cfg(feature = "gpu")]
+            gpu: default_gpu_builder(),
         };
         let mut new_balloon_cfg = BalloonDeviceConfig {
             amount_mb: 100,
@@ -875,6 +911,8 @@ mod tests {
             net_builder: default_net_builder(),
             mmds_config: None,
             boot_timer: false,
+            #[cfg(feature = "gpu")]
+            gpu: default_gpu_builder(),
         };
         new_balloon_cfg.amount_mb = 256;
         assert!(vm_resources.set_balloon_device(new_balloon_cfg).is_err());

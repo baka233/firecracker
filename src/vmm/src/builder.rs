@@ -36,6 +36,8 @@ use utils::eventfd::EventFd;
 use utils::terminal::Terminal;
 use utils::time::TimestampUs;
 use vm_memory::{GuestAddress, GuestMemoryMmap};
+#[cfg(feature = "gpu")]
+use devices::virtio::gpu::device::Gpu;
 
 /// Errors associated with starting the instance.
 #[derive(Debug)]
@@ -336,6 +338,11 @@ pub fn build_microvm_for_boot(
         vm_resources.net_builder.iter(),
         event_manager,
     )?;
+
+    #[cfg(feature = "gpu")]
+    if let Some(gpu) = vm_resources.gpu.get() {
+        attach_gpu_device(&mut vmm, &mut boot_cmdline, gpu, event_manager)?;
+    }
     if let Some(unix_vsock) = vm_resources.vsock.get() {
         attach_unixsock_vsock_device(&mut vmm, &mut boot_cmdline, unix_vsock, event_manager)?;
     }
@@ -803,6 +810,18 @@ fn attach_net_devices<'a>(
         // The device mutex mustn't be locked here otherwise it will deadlock.
         attach_virtio_device(event_manager, vmm, id, net_device.clone(), cmdline)?;
     }
+    Ok(())
+}
+
+#[cfg(feature = "gpu")]
+fn attach_gpu_device<'a>(
+    vmm: &mut Vmm,
+    cmdline: &mut KernelCmdline,
+    gpu_device: &Arc<Mutex<Gpu>>,
+    event_manager: &mut EventManager
+) -> std::result::Result<(), StartMicrovmError> {
+    let id = gpu_device.lock().expect("Poisoned lock").id();
+    attach_virtio_device(event_manager, vmm, id, gpu_device.clone(), cmdline)?;
     Ok(())
 }
 

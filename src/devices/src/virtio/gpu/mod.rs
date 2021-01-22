@@ -2,12 +2,13 @@ use std::io;
 use vhost_gpu_backend::{VirtioGpuCommandDecodeError, VirtioGpuResponse};
 use crate::virtio::gpu::Error::{CmdDecodeFailed, ResponseError};
 use vm_memory::GuestMemoryError;
-use request::Request;
 
 pub mod device;
 pub mod event_handler;
 pub mod request;
 mod utils;
+
+pub use vhost_gpu_backend::virtio_gpu::GpuMode;
 
 #[derive(Debug)]
 pub enum Error {

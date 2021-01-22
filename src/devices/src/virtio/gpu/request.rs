@@ -1,19 +1,17 @@
 use crate::virtio::DescriptorChain;
 use crate::virtio::gpu::{Result, Error};
-use vm_memory::{GuestAddress, GuestMemoryMmap, Bytes, Address, ByteValued, MemoryRegionAddress};
+use vm_memory::{GuestAddress, GuestMemoryMmap, Bytes};
 use crate::virtio::gpu::Error::InvalidDescriptor;
-use std::io::{ErrorKind};
-use std::cmp::min;
-use logger::info;
 use vhost_gpu_backend::VirtioGpuCommand;
 use vhost_gpu_backend::protocol::virtio_gpu_ctrl_hdr;
 use crate::virtio::gpu::utils::decode_gpu_cmd;
 
+#[allow(unused)]
 pub(crate) struct Request {
     pub(crate) cmd_hdr:    virtio_gpu_ctrl_hdr,
     pub(crate) desc_index: u16,
     pub(crate) command:    VirtioGpuCommand,
-    pub(crate) cmd_buf:    (GuestAddress, u32),
+    pub(crate) _cmd_buf:    (GuestAddress, u32),
     pub(crate) data_buf:   Option<(GuestAddress, u32)>,
     pub(crate) resp_buf:   (GuestAddress, u32),
 }
@@ -55,7 +53,7 @@ impl Request {
             cmd_hdr,
             desc_index: avail_desc.index,
             command,
-            cmd_buf,
+            _cmd_buf: cmd_buf,
             data_buf,
             resp_buf,
         })

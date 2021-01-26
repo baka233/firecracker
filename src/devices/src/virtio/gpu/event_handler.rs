@@ -2,12 +2,12 @@ use polly::event_manager::{Subscriber, EventManager};
 use crate::virtio::gpu::device::{Gpu, CTRL_QUEUE, CURSOR_QUEUE};
 use utils::epoll::{EpollEvent, EventSet};
 use crate::virtio::VirtioDevice;
-use logger::{METRICS, IncMetric, warn};
+use logger::{METRICS, IncMetric, warn, debug};
 
 use std::os::unix::io::AsRawFd;
 
 impl Subscriber for Gpu {
-    fn process(&mut self, event: &EpollEvent, _event_manager: &mut EventManager) {
+    fn process(&mut self, event: &EpollEvent, event_manager: &mut EventManager) {
         let source = event.fd();
         let event_set = event.event_set();
 
@@ -30,7 +30,7 @@ impl Subscriber for Gpu {
             match source {
                 _ if source == virtio_ctrl_queue => self.process_queue_event(CTRL_QUEUE),
                 _ if source == virtio_cursor_queue => self.process_queue_event(CURSOR_QUEUE),
-                _ if source == activate_fd => self.activate_and_build(),
+                _ if source == activate_fd => self.activate_and_build(event_manager),
                 _ if source == fence_fd => self.poll_fence(),
                 _ => {
                     warn!(

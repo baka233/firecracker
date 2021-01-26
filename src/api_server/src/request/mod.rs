@@ -13,6 +13,8 @@ pub mod mmds;
 pub mod net;
 pub mod snapshot;
 pub mod vsock;
+#[cfg(feature = "gpu")]
+pub mod gpu;
 pub use micro_http::{
     Body, HttpServer, Method, Request, RequestError, Response, StatusCode, Version,
 };

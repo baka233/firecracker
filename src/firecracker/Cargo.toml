@@ -6,7 +6,7 @@ edition = "2018"
 build = "../../build.rs"
 
 [features]
-gpu = ["vmm/gpu"]
+gpu = ["vmm/gpu", "api_server/gpu"]
 
 [dependencies]
 libc = ">=0.2.39"

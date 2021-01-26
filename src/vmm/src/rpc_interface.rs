@@ -39,6 +39,8 @@ use tests::{
     build_microvm_for_boot, create_snapshot, restore_from_snapshot, MockVmRes as VmResources,
     MockVmm as Vmm,
 };
+#[cfg(feature = "gpu")]
+use crate::vmm_config::gpu::{GpuDeviceConfig, GpuConfigError};
 
 /// This enum represents the public interface of the VMM. Each action contains various
 /// bits of information (ids, paths, etc.).
@@ -71,6 +73,9 @@ pub enum VmmAction {
     /// `NetworkInterfaceConfig` as input. This action can only be called before the microVM has
     /// booted.
     InsertNetworkDevice(NetworkInterfaceConfig),
+    /// Add a new gpu device config, the action can only be called before the microVM has booted.
+    #[cfg(feature = "gpu")]
+    InsertGpuDevice(GpuDeviceConfig),
     /// Load the microVM state using as input the `LoadSnapshotParams`. This action can only be
     /// called before the microVM has booted. If this action is successful, the loaded microVM will
     /// be in `Paused` state. Should change this state to `Resumed` for the microVM to run.
@@ -147,6 +152,9 @@ pub enum VmmActionError {
     StartMicrovm(StartMicrovmError),
     /// The action `SetVsockDevice` failed because of bad user input.
     VsockConfig(VsockConfigError),
+    /// The action `InsertGpuDevice` failed (current not implement)
+    #[cfg(feature = "gpu")]
+    GpuConfig(GpuConfigError),
 }
 
 impl Display for VmmActionError {
@@ -184,6 +192,8 @@ impl Display for VmmActionError {
                 StartMicrovm(err) => err.to_string(),
                 // The action `SetVsockDevice` failed because of bad user input.
                 VsockConfig(err) => err.to_string(),
+                #[cfg(feature = "gpu")]
+                GpuConfig(err) => err.to_string(),
             }
         )
     }
@@ -295,6 +305,8 @@ impl<'a> PrebootApiController<'a> {
                 self.vm_resources.vm_config().clone(),
             )),
             InsertBlockDevice(config) => self.insert_block_device(config),
+            #[cfg(feature = "gpu")]
+            InsertGpuDevice(config) => self.insert_gpu_device(config),
             InsertNetworkDevice(config) => self.insert_net_device(config),
             LoadSnapshot(config) => self.load_snapshot(&config),
             SetBalloonDevice(config) => self.set_balloon_device(config),
@@ -331,6 +343,14 @@ impl<'a> PrebootApiController<'a> {
             .set_block_device(cfg)
             .map(|()| VmmData::Empty)
             .map_err(VmmActionError::DriveConfig)
+    }
+
+    #[cfg(feature = "gpu")]
+    fn insert_gpu_device(&mut self, cfg: GpuDeviceConfig) -> ActionResult {
+        self.vm_resources
+            .set_gpu_device(cfg)
+            .map(|()| VmmData::Empty)
+            .map_err(VmmActionError::GpuConfig)
     }
 
     fn insert_net_device(&mut self, cfg: NetworkInterfaceConfig) -> ActionResult {
@@ -488,6 +508,9 @@ impl RuntimeApiController {
             UpdateNetworkInterface(netif_update) => self.update_net_rate_limiters(netif_update),
 
             // Operations not allowed post-boot.
+            #[cfg(feature = "gpu")]
+            InsertGpuDevice(_) => Err(VmmActionError::OperationNotSupportedPostBoot),
+
             ConfigureBootSource(_)
             | ConfigureLogger(_)
             | ConfigureMetrics(_)

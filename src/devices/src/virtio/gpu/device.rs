@@ -18,6 +18,8 @@ use crate::virtio::gpu::request::Request;
 use crate::virtio::gpu::utils::{sglist_to_rutabaga_iovecs, fence_ctx_equal};
 use std::ops::{DerefMut};
 use std::mem::size_of;
+use std::os::unix::io::AsRawFd;
+use polly::event_manager::{EventManager, Subscriber};
 
 pub(crate) struct FenceDescriptor {
     pub(crate) desc_fence: RutabagaFenceData,
@@ -85,7 +87,7 @@ impl Gpu {
             waiting_fence: false,
             avail_features,
             acked_features: 0,
-            gpu_mode: GpuMode::Mode2D,
+            gpu_mode: GpuMode::Mode3D,
             interrupt_status: Arc::new(Default::default()),
             virtio_gpu: None,
             device_status: DeviceState::Inactive,
@@ -112,6 +114,7 @@ impl Gpu {
     
     pub(crate) fn process_request(virtio_gpu: &mut VirtioGpu, request: &Request, mem: &GuestMemoryMmap) -> VirtioGpuResponseResult {
         // let mut virtio_gpu = self.virtio_gpu.as_ref().unwrap().lock().unwrap();
+        virtio_gpu.force_ctx_0();
         match request.command {
             VirtioGpuCommand::CmdGetDisplayInfo(cmd) => {
                 virtio_gpu.cmd_get_display_info(cmd)
@@ -219,18 +222,46 @@ impl Gpu {
         }
     }
 
-    pub fn activate_and_build(&mut self) {
+    pub fn activate_and_build(&mut self, event_manager: &mut EventManager) {
         if let Err(e) = self.activate_evt.read() {
             error!("Gpu: failed to read event, err: {:?}", e);
             METRICS.gpu.event_fails.inc();
             return;
         };
         let gpu_parameter: GpuParameter = Default::default();
-        self.virtio_gpu = VirtioGpu::new(gpu_parameter).map(Mutex::new).map(Arc::new);
+        self.virtio_gpu = Some(Arc::new(
+            Mutex::new(VirtioGpu::new(gpu_parameter).map_err(|e| {
+                panic!("Gpu: create new virtio gpu failed, err: {:?}", e);
+            }).unwrap())));
         if let None = self.virtio_gpu {
             warn!("Gpu: initial VirtioGpu instance failed, gpu_parameter: {:?}", gpu_parameter);
             METRICS.gpu.initial_fails.inc();
         }
+
+        let activate_fd = self.activate_evt.as_raw_fd();
+        // The subscriber must exist as we previously registered activate_evt via
+        // `interest_list()`.
+        let self_subscriber = match event_manager.subscriber(activate_fd) {
+            Ok(subscriber) => subscriber,
+            Err(e) => {
+                error!("Failed to process gpu activate evt: {:?}", e);
+                return;
+            }
+        };
+
+        // Interest list changes when the device is activated.
+        let interest_list = self.interest_list();
+        for event in interest_list {
+            event_manager
+                .register(event.data() as i32, event, self_subscriber.clone())
+                .unwrap_or_else(|e| {
+                    error!("Failed to register gpu events: {:?}", e);
+                });
+        }
+
+        event_manager.unregister(activate_fd).unwrap_or_else(|e| {
+            error!("Failed to unregister gpu activate evt: {:?}", e);
+        });
     }
 
     pub fn process_queue_event(&mut self, queue_type: usize) {
@@ -251,6 +282,7 @@ impl Gpu {
             // This should never happen, it's been already validated in the event handler.
             DeviceState::Inactive => return,
         };
+
 
         let completed_fences;
 
@@ -330,7 +362,7 @@ impl Gpu {
                     let mut response = match response_result {
                         Ok(r) => r,
                         Err(r) => {
-                            debug!("{:?} -> {:?}", request.command, r);
+                            error!("{:?} -> {:?}", request.command, r);
                             r
                         }
                     };
@@ -385,7 +417,7 @@ impl Gpu {
                     });
 
                     // if the request not fenced, just used the queue
-                    if flags & VIRTIO_GPU_FLAG_FENCE != 0 {
+                    if flags & VIRTIO_GPU_FLAG_FENCE == 0 {
                         queue.add_used(mem, request.desc_index, len).unwrap_or_else(|e| {
                             error!(
                                 "Failed to add available descriptor head {}: {}",
@@ -394,7 +426,8 @@ impl Gpu {
                         });
                         any_used = true;
                     } else {
-                        if self.waiting_fence {
+                        if !self.waiting_fence {
+                            self.waiting_fence = true;
                             let _ = self.fence_evt.write(1).map_err(|e| {
                                 error!("make fence event failed!, err: {:?}", e);
                                 e
@@ -520,6 +553,7 @@ impl VirtioDevice for Gpu {
     }
 
     fn activate(&mut self, mem: GuestMemoryMmap) -> ActivateResult {
+        debug!("Gpu: try to activate gpu");
         if self.activate_evt.write(1).is_err() {
             error!("Gpu: Cannot write to activate_evt");
             return Err(super::super::ActivateError::BadActivate);

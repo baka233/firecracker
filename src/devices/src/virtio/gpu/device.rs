@@ -169,6 +169,9 @@ impl Gpu {
 
                 virtio_gpu.cmd_resource_attach_backing(cmd, rutabaga_iovecs.unwrap())
             }
+            VirtioGpuCommand::CmdResourceAssignUuid(cmd) => {
+                virtio_gpu.cmd_resource_assign_uuid(cmd)
+            }
             VirtioGpuCommand::CmdResourceDetachBacking(cmd) => {
                 virtio_gpu.cmd_resource_detach_backing(cmd)
             }

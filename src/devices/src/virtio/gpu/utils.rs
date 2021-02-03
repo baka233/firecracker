@@ -25,6 +25,7 @@ pub fn decode_gpu_cmd(
         VIRTIO_GPU_CMD_GET_CAPSET_INFO          => CmdGetCapsetInfo(cmd.read_obj(addr)?),
         VIRTIO_GPU_CMD_GET_CAPSET               => CmdGetCapset(cmd.read_obj(addr)?),
         VIRTIO_GPU_CMD_GET_EDID                 => CmdGetEdid(cmd.read_obj(addr)?),
+        VIRTIO_GPU_CMD_RESOURCE_ASSIGN_UUID     => CmdResourceAssignUuid(cmd.read_obj(addr)?),
 
         VIRTIO_GPU_CMD_CTX_CREATE               => CmdCtxCreate(cmd.read_obj(addr)?),
         VIRTIO_GPU_CMD_CTX_DESTROY              => CmdCtxDestroy(cmd.read_obj(addr)?),

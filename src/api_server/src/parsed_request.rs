@@ -26,6 +26,7 @@ use logger::{error, info};
 use vmm::rpc_interface::{VmmAction, VmmActionError};
 #[cfg(feature = "gpu")]
 use crate::request::gpu::parse_put_gpu;
+use crate::request::fpga::parse_put_fpga;
 
 pub(crate) enum ParsedRequest {
     GetInstanceInfo,
@@ -76,6 +77,7 @@ impl ParsedRequest {
             }
             #[cfg(feature = "gpu")]
             (Method::Put, "gpu", Some(body)) => parse_put_gpu(body),
+            (Method::Put, "fpga", Some(body)) => parse_put_fpga(body),
             (Method::Put, "snapshot", Some(body)) => parse_put_snapshot(body, path_tokens.get(1)),
             (Method::Put, "vsock", Some(body)) => parse_put_vsock(body),
             (Method::Put, _, None) => method_to_error(Method::Put),

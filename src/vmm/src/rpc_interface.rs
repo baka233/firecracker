@@ -41,6 +41,7 @@ use tests::{
 };
 #[cfg(feature = "gpu")]
 use crate::vmm_config::gpu::{GpuDeviceConfig, GpuConfigError};
+use crate::vmm_config::fpga::{FpgaDeviceConfig, FpgaConfigError};
 
 /// This enum represents the public interface of the VMM. Each action contains various
 /// bits of information (ids, paths, etc.).
@@ -76,6 +77,8 @@ pub enum VmmAction {
     /// Add a new gpu device config, the action can only be called before the microVM has booted.
     #[cfg(feature = "gpu")]
     InsertGpuDevice(GpuDeviceConfig),
+    /// add a new fpga device config, the action can only be called before the microVM has booted.
+    InsertFpgaDevice(FpgaDeviceConfig),
     /// Load the microVM state using as input the `LoadSnapshotParams`. This action can only be
     /// called before the microVM has booted. If this action is successful, the loaded microVM will
     /// be in `Paused` state. Should change this state to `Resumed` for the microVM to run.
@@ -155,6 +158,8 @@ pub enum VmmActionError {
     /// The action `InsertGpuDevice` failed (current not implement)
     #[cfg(feature = "gpu")]
     GpuConfig(GpuConfigError),
+    /// The action `InsertFpgaDevice` failed
+    FpgaConfig(FpgaConfigError),
 }
 
 impl Display for VmmActionError {
@@ -194,6 +199,7 @@ impl Display for VmmActionError {
                 VsockConfig(err) => err.to_string(),
                 #[cfg(feature = "gpu")]
                 GpuConfig(err) => err.to_string(),
+                FpgaConfig(err) => err.to_string(),
             }
         )
     }
@@ -307,6 +313,7 @@ impl<'a> PrebootApiController<'a> {
             InsertBlockDevice(config) => self.insert_block_device(config),
             #[cfg(feature = "gpu")]
             InsertGpuDevice(config) => self.insert_gpu_device(config),
+            InsertFpgaDevice(config) => self.insert_fpga_device(config),
             InsertNetworkDevice(config) => self.insert_net_device(config),
             LoadSnapshot(config) => self.load_snapshot(&config),
             SetBalloonDevice(config) => self.set_balloon_device(config),
@@ -351,6 +358,13 @@ impl<'a> PrebootApiController<'a> {
             .set_gpu_device(cfg)
             .map(|()| VmmData::Empty)
             .map_err(VmmActionError::GpuConfig)
+    }
+
+    fn insert_fpga_device(&mut self, cfg: FpgaDeviceConfig) -> ActionResult {
+        self.vm_resources
+            .set_fpga_device(cfg)
+            .map(|()| VmmData::Empty)
+            .map_err(VmmActionError::FpgaConfig)
     }
 
     fn insert_net_device(&mut self, cfg: NetworkInterfaceConfig) -> ActionResult {
@@ -516,6 +530,7 @@ impl RuntimeApiController {
             | ConfigureMetrics(_)
             | InsertBlockDevice(_)
             | InsertNetworkDevice(_)
+            | InsertFpgaDevice(_)
             | LoadSnapshot(_)
             | SetBalloonDevice(_)
             | SetVsockDevice(_)

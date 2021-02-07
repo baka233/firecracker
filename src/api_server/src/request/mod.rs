@@ -13,6 +13,7 @@ pub mod mmds;
 pub mod net;
 pub mod snapshot;
 pub mod vsock;
+pub mod fpga;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub use micro_http::{

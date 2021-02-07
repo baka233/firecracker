@@ -37,6 +37,8 @@ pub mod vsock;
 /// Wrapper for configuring the gpu devices attached to the microVM
 #[cfg(feature = "gpu")]
 pub mod gpu;
+/// Wrapper for configuraing the fpga devices attached to the microVM
+pub mod fpga;
 
 // TODO: Migrate the VMM public-facing code (i.e. interface) to use stateless structures,
 // for receiving data/args, such as the below `RateLimiterConfig` and `TokenBucketConfig`.

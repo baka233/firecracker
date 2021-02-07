@@ -334,6 +334,10 @@ pub struct PutRequestsMetrics {
     pub gpu_count:     SharedIncMetric,
     /// Number of failures in creating a new gpu
     pub gpu_fails:     SharedIncMetric,
+    /// Number of PUTS for creating a new fpga
+    pub fpga_count:    SharedIncMetric,
+    /// Number of failures in creating a new fpga
+    pub fpga_fails:    SharedIncMetric,
 }
 
 /// Metrics specific to PATCH API Requests for counting user triggered actions and/or failures.
@@ -694,6 +698,14 @@ pub struct GpuMetrics {
     pub execute_fails: SharedIncMetric,
 }
 
+#[derive(Default, Serialize)]
+pub struct FpgaMetrics {
+    /// Number of failed event process
+    pub event_fails: SharedIncMetric,
+    /// Number of config failed
+    pub cfg_fails: SharedIncMetric,
+}
+
 // The sole purpose of this struct is to produce an UTC timestamp when an instance is serialized.
 #[derive(Default)]
 struct SerializeToUtcTimestampMs;
@@ -748,6 +760,8 @@ pub struct FirecrackerMetrics {
     pub vsock: VsockDeviceMetrics,
     /// Metrics related to virtio-gpu.
     pub gpu: GpuMetrics,
+    /// Metrics related to virtio-dfl-fpga
+    pub fpga: FpgaMetrics,
 }
 
 #[cfg(test)]

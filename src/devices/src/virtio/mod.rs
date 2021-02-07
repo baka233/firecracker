@@ -14,6 +14,7 @@ pub mod block;
 pub mod device;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+pub mod fpga;
 mod mmio;
 pub mod net;
 pub mod persist;

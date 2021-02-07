@@ -24,6 +24,7 @@ use utils::net::ipv4addr::is_link_local_valid;
 use serde::Deserialize;
 #[cfg(feature = "gpu")]
 use crate::vmm_config::gpu::{GpuBuilder, GpuDeviceConfig, GpuConfigError};
+use crate::vmm_config::fpga::{FpgaBuilder, FpgaDeviceConfig, FpgaConfigError};
 
 type Result<E> = std::result::Result<(), E>;
 
@@ -53,6 +54,8 @@ pub enum Error {
     /// Gpu device configuration error
     #[cfg(feature = "gpu")]
     GpuDevice(GpuConfigError),
+    /// Fpga device configuration error
+    FpgaDevice(FpgaConfigError),
 }
 
 /// Used for configuring a vmm from one single json passed to the Firecracker process.
@@ -79,6 +82,8 @@ pub struct VmmConfig {
     #[cfg(feature = "gpu")]
     #[serde(rename = "gpu")]
     gpu_device: Option<GpuDeviceConfig>,
+    #[serde(rename = "fpga")]
+    fpga_device: Option<FpgaDeviceConfig>,
 }
 
 /// A data structure that encapsulates the device configurations
@@ -104,6 +109,8 @@ pub struct VmResources {
     /// The gpu device.
     #[cfg(feature = "gpu")]
     pub gpu: GpuBuilder,
+    /// The Fpga device builder.
+    pub fpga: FpgaBuilder,
 }
 
 impl VmResources {
@@ -157,6 +164,12 @@ impl VmResources {
             resources
                 .set_gpu_device(gpu_config)
                 .map_err(Error::GpuDevice)?;
+        }
+
+        if let Some(fpga_config) = vmm_config.fpga_device {
+            resources
+                .set_fpga_device(fpga_config)
+                .map_err(Error::FpgaDevice)?;
         }
 
         if let Some(balloon_config) = vmm_config.balloon_device {
@@ -348,6 +361,11 @@ impl VmResources {
         self.gpu.insert(config)
     }
 
+    /// Sets a fpga device to be attached when the VM starts
+    pub fn set_fpga_device(&mut self, config: FpgaDeviceConfig) -> Result<FpgaConfigError> {
+        self.fpga.insert(config)
+    }
+
     /// Setter for mmds config.
     pub fn set_mmds_config(&mut self, config: MmdsConfig) -> Result<MmdsConfigError> {
         // Check IPv4 address validity.
@@ -419,6 +437,10 @@ mod tests {
         gpu_builder
     }
 
+    fn default_fpga_builder() -> FpgaBuilder {
+        FpgaBuilder::new()
+    }
+
     fn default_block_cfg() -> (BlockDeviceConfig, TempFile) {
         let tmp_file = TempFile::new().unwrap();
         (
@@ -464,6 +486,7 @@ mod tests {
             boot_timer: false,
             #[cfg(feature = "gpu")]
             gpu: default_gpu_builder(),
+            fpga: default_fpga_builder(),
         }
     }
 
@@ -880,6 +903,7 @@ mod tests {
             boot_timer: false,
             #[cfg(feature = "gpu")]
             gpu: default_gpu_builder(),
+            fpga: default_fpga_builder(),
         };
         let mut new_balloon_cfg = BalloonDeviceConfig {
             amount_mb: 100,
@@ -913,6 +937,7 @@ mod tests {
             boot_timer: false,
             #[cfg(feature = "gpu")]
             gpu: default_gpu_builder(),
+            fpga: default_fpga_builder(),
         };
         new_balloon_cfg.amount_mb = 256;
         assert!(vm_resources.set_balloon_device(new_balloon_cfg).is_err());

@@ -288,6 +288,7 @@ dependencies = [
  "dumbo",
  "libc",
  "logger",
+ "mem_control",
  "mmds",
  "net_gen",
  "polly",
@@ -452,6 +453,13 @@ dependencies = [
  "serde",
  "serde_json",
  "utils",
+]
+
+[[package]]
+name = "mem_control"
+version = "0.1.0"
+dependencies = [
+ "vm-memory 0.1.0",
 ]
 
 [[package]]
@@ -908,6 +916,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "logger",
+ "mem_control",
  "mmds",
  "polly",
  "rate_limiter",

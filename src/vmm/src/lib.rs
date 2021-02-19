@@ -36,13 +36,13 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::os::unix::io::AsRawFd;
-use std::sync::mpsc::RecvTimeoutError;
-use std::sync::Mutex;
+use std::sync::mpsc::{RecvTimeoutError};
+use std::sync::{Mutex, Arc};
 use std::time::Duration;
 
 #[cfg(target_arch = "x86_64")]
 use crate::device_manager::legacy::PortIODeviceManager;
-use crate::device_manager::mmio::MMIODeviceManager;
+use crate::device_manager::mmio::{MMIODeviceManager};
 use crate::memory_snapshot::SnapshotMemory;
 use crate::persist::{MicrovmState, MicrovmStateError, VmInfo};
 use crate::vstate::vcpu::VcpuState;
@@ -65,6 +65,7 @@ use snapshot::Persist;
 use utils::epoll::{EpollEvent, EventSet};
 use utils::eventfd::EventFd;
 use vm_memory::{GuestMemory, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap};
+use mem_control::{MemRequest, VmMemRequest, VmMemResponse, VmMemError};
 
 /// Success exit code.
 pub const FC_EXIT_CODE_OK: u8 = 0;
@@ -229,7 +230,7 @@ pub(crate) fn mem_size_mib(guest_memory: &GuestMemoryMmap) -> u64 {
 
 /// Contains the state and associated methods required for the Firecracker VMM.
 pub struct Vmm {
-    events_observer: Option<Box<dyn VmmEventsObserver>>,
+    events_observer: Option<Box<dyn VmmEventsObserver + Send>>,
 
     // Guest VM core resources.
     guest_memory: GuestMemoryMmap,
@@ -438,6 +439,26 @@ impl Vmm {
 
         self.check_vcpus_response(expected_response)
             .map_err(|_| Error::VcpuMessage)
+    }
+
+
+    /// Insert memory region
+    fn insert_memory_region(
+        &mut self,
+        memory_region: Arc<GuestRegionMmap>
+    ) -> std::result::Result<u32, vstate::vm::Error> {
+        self.vm.add_kvm_memory_region(
+            memory_region,
+            false
+        )
+    }
+
+    /// Remove memory region from kvm
+    fn remove_memory_region(
+        &mut self,
+        slot: u32,
+    ) -> std::result::Result<(), vstate::vm::Error> {
+        self.vm.remove_kvm_memory_region(slot)
     }
 
     /// Restores vcpus kvm states.
@@ -746,5 +767,54 @@ impl Subscriber for Vmm {
             EventSet::IN,
             self.exit_evt.as_raw_fd() as u64,
         )]
+    }
+}
+
+impl MemRequest for Vmm {
+    fn execute_vm_mem_request(
+        &mut self,
+        request: VmMemRequest
+    ) -> std::result::Result<VmMemResponse, VmMemError> {
+        match request {
+            VmMemRequest::MemoryAllocate(alloc, size, tag) => {
+                let addr = self.mmio_device_manager
+                    .get_allocator()
+                    .ok_or(VmMemError::AllocatorNotExist)?
+                    .allocate(size, alloc, tag)
+                    .map_err(|e| {
+                        error!("add mem region failed, err: {:?}", e);
+                        VmMemError::AddMemRegionFailed
+                    })?;
+                Ok(VmMemResponse::MemoryAllocate(addr, size))
+            },
+            VmMemRequest::SetKvmUserMem(region) => {
+                let slot = self.insert_memory_region(region)
+                    .map_err(|e| {
+                        error!("set kvm user mem failed, {:?}", e);
+                        VmMemError::SetKvmUserMemFailed
+                    })?;
+                Ok(VmMemResponse::KvmUserMemMapped(slot))
+            },
+            VmMemRequest::UnsetKvmUserMem(slot) => {
+                self.remove_memory_region(slot)
+                    .map_err(|e| {
+                        error!("unset kvm user mem failed: {:?}", e);
+                        VmMemError::UnsetKvmUserMemFailed
+                    })?;
+                Ok(VmMemResponse::Success)
+            }
+            VmMemRequest::MemoryRelease(alloc) => {
+                self.mmio_device_manager
+                    .get_allocator()
+                    .ok_or(VmMemError::AllocatorNotExist)?
+                    .release(alloc)
+                    .map_err(|e| {
+                        error!("release memory failed: {:?}", e);
+                        VmMemError::RemoveMemRegionFailed
+                    })?;
+
+                Ok(VmMemResponse::Success)
+            }
+        }
     }
 }

@@ -79,6 +79,8 @@ pub enum StartMicrovmError {
     RegisterMmioDevice(device_manager::mmio::Error),
     /// Cannot restore microvm state.
     RestoreMicrovmState(MicrovmStateError),
+    /// Cannot get high mmio range
+    HighMmioRange(arch::Error),
 }
 
 /// It's convenient to automatically convert `kernel::cmdline::Error`s
@@ -156,6 +158,7 @@ impl Display for StartMicrovmError {
                 )
             }
             RestoreMicrovmState(err) => write!(f, "Cannot restore microvm state. Error: {}", err),
+            HighMmioRange(err) => write!(f, "Cannot get high mmio range: {:?}", err),
         }
     }
 }
@@ -225,8 +228,13 @@ fn create_vmm_and_vcpus(
     // Instantiate the MMIO device manager.
     // 'mmio_base' address has to be an address which is protected by the kernel
     // and is architectural specific.
-    let mmio_device_manager =
+    let mut mmio_device_manager =
         MMIODeviceManager::new(arch::MMIO_MEM_START, (arch::IRQ_BASE, arch::IRQ_MAX));
+
+    let (mmio_high_base, mmio_high_len) = arch::get_high_mmio_range(&guest_memory)
+        .map_err(StartMicrovmError::HighMmioRange)?;
+    mmio_device_manager.assign_high_mmio_region(mmio_high_base, mmio_high_len)
+        .map_err(StartMicrovmError::RegisterMmioDevice)?;
 
     let vcpus;
     // For x86_64 we need to create the interrupt controller before calling `KVM_CREATE_VCPUS`
@@ -380,6 +388,12 @@ pub fn build_microvm_for_boot(
     vmm.resume_vm().map_err(Internal)?;
 
     let vmm = Arc::new(Mutex::new(vmm));
+    if let Some(fpga) = vm_resources.fpga.get() {
+        fpga.lock()
+            .expect("poisoned lock")
+            .set_vmm(vmm.clone());
+    }
+
     event_manager
         .add_subscriber(vmm.clone())
         .map_err(RegisterEvent)?;

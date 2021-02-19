@@ -1,6 +1,6 @@
 use crate::virtio::{VirtioDevice, ActivateResult, Queue, DeviceState};
 use vm_memory::{GuestMemoryMmap, ByteValued, Le32};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use utils::eventfd::EventFd;
 use std::sync::atomic::AtomicUsize;
 use crate::virtio::fpga::protocol::virtio_fpga_config;
@@ -11,12 +11,13 @@ use polly::event_manager::{EventManager, Subscriber};
 use logger::{METRICS, IncMetric, warn, error, debug};
 use crate::virtio::fpga::protocol::*;
 use std::os::unix::io::AsRawFd;
+use mem_control::MemRequest;
 
 pub struct Fpga {
     pub(crate) fme_path:         String,
     pub(crate) port_paths:       Vec<String>,
     pub(crate) port_num:         u32,
-    pub(crate) avail_features:    u64,
+    pub(crate) avail_features:   u64,
     pub(crate) acked_feature:    u64,
     pub(crate) activate_evt:     EventFd,
     pub(crate) interrupt_evt:    EventFd,
@@ -24,6 +25,7 @@ pub struct Fpga {
     pub(crate) device_status:    DeviceState,
     pub(crate) queue_evts:       Vec<EventFd>,
     pub(crate) queues:           Vec<Queue>,
+    pub(crate) mem_control:      Option<Arc<Mutex<dyn MemRequest + Send>>>,
 }
 
 pub const QUEUE_SIZE: u16 = 256;
@@ -58,7 +60,8 @@ impl Fpga {
             interrupt_stauts: Arc::new(Default::default()),
             device_status:    DeviceState::Inactive,
             queue_evts,
-            queues
+            queues,
+            mem_control: None
         })
     }
 
@@ -90,6 +93,10 @@ impl Fpga {
         event_manager.unregister(activate_fd).unwrap_or_else(|err| {
             error!("Failed to unregister fpga activate evt: {:?}", err);
         });
+    }
+
+    pub fn set_vmm(&mut self, vmm: Arc<Mutex<dyn MemRequest + Send>>) {
+        self.mem_control = Some(vmm);
     }
 
     pub fn id(&self) -> String {

@@ -24,7 +24,10 @@ use kvm_bindings::{kvm_userspace_memory_region, KVM_MEM_LOG_DIRTY_PAGES};
 use kvm_ioctls::{Kvm, VmFd};
 use versionize::{VersionMap, Versionize, VersionizeResult};
 use versionize_derive::Versionize;
-use vm_memory::{Address, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
+use vm_memory::{Address, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, GuestRegionMmap};
+use std::collections::{BinaryHeap, BTreeMap};
+use std::cmp::Reverse;
+use std::sync::Arc;
 
 /// Errors associated with the wrappers over KVM ioctls.
 #[derive(Debug)]
@@ -36,6 +39,8 @@ pub enum Error {
     NotEnoughMemorySlots,
     /// Cannot set the memory regions.
     SetUserMemoryRegion(kvm_ioctls::Error),
+    /// Cannot find specified memory region
+    UnknownMemoryRegion(u32),
     #[cfg(target_arch = "aarch64")]
     /// Cannot create the global interrupt controller..
     VmCreateGIC(arch::aarch64::gic::Error),
@@ -83,6 +88,7 @@ impl Display for Error {
                 "The number of configured slots is bigger than the maximum reported by KVM"
             ),
             SetUserMemoryRegion(e) => write!(f, "Cannot set the memory regions: {}", e),
+            UnknownMemoryRegion(slot) => write!(f, "Unknown memory slot {}", slot),
             #[cfg(target_arch = "x86_64")]
             VmGetPit2(e) => write!(f, "Failed to get KVM vm pit state: {}", e),
             #[cfg(target_arch = "x86_64")]
@@ -115,6 +121,10 @@ pub struct Vm {
     #[cfg(target_arch = "x86_64")]
     supported_msrs: MsrList,
 
+    mem_slot_gaps: BinaryHeap<Reverse<u32>>,
+    guest_mem_region_size:   u32,
+    regions:       BTreeMap<u32, Arc<GuestRegionMmap>>,
+
     // Arm specific fields.
     // On aarch64 we need to keep around the fd obtained by creating the VGIC device.
     #[cfg(target_arch = "aarch64")]
@@ -141,8 +151,11 @@ impl Vm {
             supported_cpuid,
             #[cfg(target_arch = "x86_64")]
             supported_msrs,
+            mem_slot_gaps: Default::default(),
+            guest_mem_region_size: 0,
             #[cfg(target_arch = "aarch64")]
             irqchip_handle: None,
+            regions: Default::default()
         })
     }
 
@@ -285,17 +298,79 @@ impl Vm {
         Ok(())
     }
 
+    pub(crate) fn add_kvm_memory_region(
+        &mut self,
+        guest_mem: Arc<GuestRegionMmap>,
+        track_dirty_pages: bool,
+    ) -> Result<u32> {
+        let mut flags = 0u32;
+        let slot = match self.mem_slot_gaps.pop() {
+            Some(gap) => gap.0,
+            None => self.regions.len() as u32 + self.guest_mem_region_size,
+        };
+        if track_dirty_pages {
+            flags |= KVM_MEM_LOG_DIRTY_PAGES;
+        }
+        let memory_region = kvm_userspace_memory_region {
+            slot,
+            flags,
+            guest_phys_addr: guest_mem.start_addr().raw_value(),
+            memory_size: guest_mem.len() as u64,
+            userspace_addr: guest_mem.as_ptr() as u64,
+        };
+
+        unsafe {
+            self.fd.set_user_memory_region(memory_region)
+                .map_err(|e| {
+                    self.mem_slot_gaps.push(Reverse(slot));
+                    Error::SetUserMemoryRegion(e)
+                })?
+        };
+
+        self.regions.insert(slot, guest_mem.clone());
+
+        Ok(slot)
+    }
+
+    pub(crate) fn remove_kvm_memory_region(
+        &mut self,
+        slot: u32
+    ) -> Result<()> {
+        if self.regions.contains_key(&slot) {
+            return Err(Error::UnknownMemoryRegion(slot))
+        }
+
+        let memory_region = kvm_userspace_memory_region {
+            slot,
+            flags: 0,
+            guest_phys_addr: 0,
+            memory_size: 0,
+            userspace_addr: 0
+        };
+
+        unsafe {
+            self.fd.set_user_memory_region(memory_region)
+                .map_err(Error::SetUserMemoryRegion)?;
+        }
+
+        self.mem_slot_gaps.push(Reverse(slot));
+        self.regions.remove(&slot).unwrap();
+
+        Ok(())
+    }
+
     pub(crate) fn set_kvm_memory_regions(
-        &self,
+        &mut self,
         guest_mem: &GuestMemoryMmap,
         track_dirty_pages: bool,
     ) -> Result<()> {
+        let mut region_size = 0;
         let mut flags = 0u32;
         if track_dirty_pages {
             flags |= KVM_MEM_LOG_DIRTY_PAGES;
         }
         guest_mem
-            .with_regions(|index, region| {
+            .with_regions_mut(|index, region| {
                 let memory_region = kvm_userspace_memory_region {
                     slot: index as u32,
                     guest_phys_addr: region.start_addr().raw_value() as u64,
@@ -305,10 +380,12 @@ impl Vm {
                     flags,
                 };
 
+                region_size += 1;
                 // Safe because the fd is a valid KVM file descriptor.
                 unsafe { self.fd.set_user_memory_region(memory_region) }
             })
             .map_err(Error::SetUserMemoryRegion)?;
+        self.guest_mem_region_size = region_size;
         Ok(())
     }
 }
@@ -419,7 +496,7 @@ pub(crate) mod tests {
     #[test]
     fn test_set_kvm_memory_regions() {
         let kvm_context = KvmContext::new().unwrap();
-        let vm = Vm::new(kvm_context.fd()).expect("Cannot create new vm");
+        let mut vm = Vm::new(kvm_context.fd()).expect("Cannot create new vm");
 
         let gm = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x1000)]).unwrap();
         let res = vm.set_kvm_memory_regions(&gm, false);

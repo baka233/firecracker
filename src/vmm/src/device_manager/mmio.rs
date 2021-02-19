@@ -5,7 +5,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the THIRD-PARTY file.
 
-use std::collections::HashMap;
+use std::collections::{HashMap};
 use std::sync::{Arc, Mutex};
 use std::{fmt, io};
 
@@ -23,6 +23,7 @@ use kvm_ioctls::{IoEventAddress, VmFd};
 use logger::info;
 use versionize::{VersionMap, Versionize, VersionizeResult};
 use versionize_derive::Versionize;
+use mem_control::address_allocator::AddressAllocator;
 
 /// Errors for MMIO device manager.
 #[derive(Debug)]
@@ -49,6 +50,8 @@ pub enum Error {
     RegisterIrqFd(kvm_ioctls::Error),
     /// Failed to update the mmio device.
     UpdateFailed,
+    /// Address allocator create failed
+    AddressAllocaorFailed(mem_control::address_allocator::Error),
 }
 
 impl fmt::Display for Error {
@@ -65,6 +68,7 @@ impl fmt::Display for Error {
             Error::RegisterIrqFd(e) => write!(f, "failed to register irqfd: {}", e),
             Error::DeviceNotFound => write!(f, "the device couldn't be found"),
             Error::UpdateFailed => write!(f, "failed to update the mmio device"),
+            Error::AddressAllocaorFailed(e) => write!(f, "create high mem address allocator failed: {}", e),
         }
     }
 }
@@ -131,6 +135,7 @@ impl IrqManager {
 pub struct MMIODeviceManager {
     pub(crate) bus: devices::Bus,
     mmio_base: u64,
+    high_mmio_region: Option<AddressAllocator>,
     next_avail_mmio: u64,
     irqs: IrqManager,
     pub(crate) id_to_dev_info: HashMap<(DeviceType, String), MMIODeviceInfo>,
@@ -141,11 +146,27 @@ impl MMIODeviceManager {
     pub fn new(mmio_base: u64, irq_interval: (u32, u32)) -> MMIODeviceManager {
         MMIODeviceManager {
             mmio_base,
+            high_mmio_region: None,
             next_avail_mmio: mmio_base,
             irqs: IrqManager::new(irq_interval.0, irq_interval.1),
             bus: devices::Bus::new(),
             id_to_dev_info: HashMap::new(),
         }
+    }
+
+    pub fn assign_high_mmio_region(&mut self, mmio_base: u64, len: u64) -> Result<()> {
+        self.high_mmio_region = Some(
+            AddressAllocator::new(
+                mmio_base,
+                len,
+                Some(1 << 22)
+            ).map_err(Error::AddressAllocaorFailed)?
+        );
+        Ok(())
+    }
+
+    pub fn get_allocator(&mut self) -> Option<&mut AddressAllocator> {
+        self.high_mmio_region.as_mut()
     }
 
     /// Allocates resources for a new device to be added.

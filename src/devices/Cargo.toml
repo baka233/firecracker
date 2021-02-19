@@ -26,3 +26,4 @@ snapshot = { path = "../snapshot" }
 utils = { path = "../utils" }
 virtio_gen = { path = "../virtio_gen" }
 vhost-gpu-backend = { git = "https://github.com/baka233/vhost-gpu-backend", branch = "main", optional = true }
+mem_control = { path = "../mem_control" }

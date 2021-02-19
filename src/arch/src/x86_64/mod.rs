@@ -18,9 +18,8 @@ pub mod regs;
 
 use crate::InitrdConfig;
 use arch_gen::x86::bootparam::{boot_params, E820_RAM};
-use vm_memory::{
-    Address, ByteValued, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion,
-};
+use vm_memory::{Address, ByteValued, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
+use std::cmp;
 
 // This is a workaround to the Rust enforcement specifying that any implementation of a foreign
 // trait (in this case `ByteValued`) where:
@@ -44,6 +43,8 @@ pub enum Error {
     ZeroPageSetup,
     /// Failed to compute initrd address.
     InitrdAddress,
+    /// Failed to compute high mmio address
+    InvalidMmioAddress,
 }
 
 // Where BIOS/VGA magic would live on a real PC.
@@ -90,6 +91,25 @@ pub fn initrd_load_addr(guest_mem: &GuestMemoryMmap, initrd_size: usize) -> supe
 
     let align_to_pagesize = |address| address & !(super::PAGE_SIZE - 1);
     Ok(align_to_pagesize(lowmem_size - initrd_size) as u64)
+}
+
+/// Returns the high mmio range
+pub fn get_high_mmio_range(guest_memory: &GuestMemoryMmap) -> super::Result<(u64, u64)> {
+    const MB : u64 = 1 << 20;
+    const GB : u64 = 1 << 30;
+    let mut max_addr = 4 * GB;
+    guest_memory.with_regions_mut(|_, region| -> std::result::Result<(), Error> {
+        max_addr = cmp::max(
+            region.start_addr().unchecked_add(region.size() as u64).raw_value(),
+            max_addr
+        );
+        Ok(())
+    })?;
+
+    max_addr = (max_addr + (2 * MB - 1)) / (2 * MB) * (2 * MB);
+
+    let size = u64::max_value() - max_addr as u64;
+    Ok((max_addr, size))
 }
 
 /// Configures the system and should be called once per vm before starting vcpu threads.

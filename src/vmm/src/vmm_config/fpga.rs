@@ -36,7 +36,7 @@ impl Display for FpgaConfigError {
 /// fpga device configuration
 pub struct FpgaDeviceConfig {
     /// fme path, eg: /sys/class/fpga_region/region[0-9]+/dfl-fme.0
-    fme_path:   String,
+    fme_path:   Option<String>,
     /// port path eg: /sys/class/fpga_region/region[0-9]+/dfl-port.0
     port_paths: Vec<String>,
 }
@@ -59,7 +59,7 @@ impl FpgaBuilder {
     /// insert the new config and build the fpga
     pub fn insert(&mut self, config: FpgaDeviceConfig) -> Result<()> {
         self.inner = Some(Arc::new(Mutex::new(Fpga::new(
-            config.fme_path,
+            config.fme_path.as_ref(),
             config.port_paths
         )?)));
         info!("Fpga: init fpga device successfully");

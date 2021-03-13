@@ -69,7 +69,7 @@ impl AddressAllocator {
             return Err(Error::BadAlignment);
         }
         let mut regions = BTreeSet::new();
-        regions.insert((pool_size, pool_end));
+        regions.insert((pool_base, pool_end));
         Ok(AddressAllocator {
             alignment,
             allocs: HashMap::new(),

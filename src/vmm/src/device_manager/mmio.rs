@@ -159,7 +159,7 @@ impl MMIODeviceManager {
             AddressAllocator::new(
                 mmio_base,
                 len,
-                Some(1 << 22)
+                Some(1 << 12)
             ).map_err(Error::AddressAllocaorFailed)?
         );
         Ok(())

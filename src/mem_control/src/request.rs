@@ -3,6 +3,7 @@ use vm_memory::{GuestRegionMmap};
 use std::sync::Arc;
 
 /// process memory request
+#[derive(Debug)]
 pub enum VmMemRequest {
     MemoryAllocate(Alloc, u64, String),
     SetKvmUserMem(Arc<GuestRegionMmap>),
@@ -10,6 +11,7 @@ pub enum VmMemRequest {
     MemoryRelease(Alloc),
 }
 
+#[derive(Debug)]
 pub enum VmMemResponse {
     /// request process successully
     Success,

@@ -28,6 +28,8 @@ use vm_memory::{Address, GuestMemory, GuestMemoryMmap, GuestMemoryRegion, GuestR
 use std::collections::{BinaryHeap, BTreeMap};
 use std::cmp::Reverse;
 use std::sync::Arc;
+use logger::{debug};
+use arch::PAGE_SIZE;
 
 /// Errors associated with the wrappers over KVM ioctls.
 #[derive(Debug)]
@@ -311,13 +313,16 @@ impl Vm {
         if track_dirty_pages {
             flags |= KVM_MEM_LOG_DIRTY_PAGES;
         }
+        let memory_size = (guest_mem.len() as u64 + PAGE_SIZE as u64) / PAGE_SIZE as u64 * PAGE_SIZE as u64;
         let memory_region = kvm_userspace_memory_region {
             slot,
             flags,
             guest_phys_addr: guest_mem.start_addr().raw_value(),
-            memory_size: guest_mem.len() as u64,
+            memory_size,
             userspace_addr: guest_mem.as_ptr() as u64,
         };
+
+        debug!("memory_region to insert is {:?}", memory_region);
 
         unsafe {
             self.fd.set_user_memory_region(memory_region)

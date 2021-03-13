@@ -704,6 +704,8 @@ pub struct FpgaMetrics {
     pub event_fails: SharedIncMetric,
     /// Number of config failed
     pub cfg_fails: SharedIncMetric,
+    /// Number of exec command failed
+    pub execute_fails: SharedIncMetric,
 }
 
 // The sole purpose of this struct is to produce an UTC timestamp when an instance is serialized.

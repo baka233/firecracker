@@ -8,6 +8,7 @@ use std::fmt::{Display, Formatter};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::{Arc, Mutex};
+use logger::debug;
 
 #[cfg(target_arch = "aarch64")]
 use crate::construct_kvm_mpidrs;
